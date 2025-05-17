@@ -17,7 +17,7 @@ public class EventTests
         var data = new { CourseId = "c1", RegistrationDate = DateTime.UtcNow };
 
         // Act
-        var @event = Event.CreateWithTags(eventType, tags, data);
+        var @event = Event.CreateEventWithTags(eventType, tags, data);
 
         // Assert
         Assert.False(string.IsNullOrWhiteSpace(@event.Id));
@@ -38,7 +38,7 @@ public class EventTests
         var data = new { CourseId = "c1", RegistrationDate = DateTime.UtcNow };
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => Event.CreateWithTags(eventType!, tags, data));
+        Assert.Throws<ArgumentException>(() => Event.CreateEventWithTags(eventType!, tags, data));
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public class EventTests
         var data = new { CourseId = "c1", RegistrationDate = DateTime.UtcNow };
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Event.CreateWithTags(eventType, tags, data));
+        Assert.Throws<ArgumentNullException>(() => Event.CreateEventWithTags(eventType, tags, data));
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class EventTests
         object data = null!;
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Event.CreateWithTags(eventType, tags, data));
+        Assert.Throws<ArgumentNullException>(() => Event.CreateEventWithTags(eventType, tags, data));
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class EventTests
         var data = new { CourseId = "c2", StartDate = DateTime.UtcNow };
 
         // Act
-        var @event = Event.CreateWithTags(eventType, tags, data);
+        var @event = Event.CreateEventWithTags(eventType, tags, data);
 
         // Assert
         Assert.False(string.IsNullOrWhiteSpace(@event.Id));
@@ -93,7 +93,7 @@ public class EventTests
         var data = new { StudentId = "s2", SubscriptionDate = DateTime.UtcNow };
 
         // Act
-        var @event = Event.CreateWithTags(eventType, new[] { tag }, data);
+        var @event = Event.CreateEventWithTags(eventType, new[] { tag }, data);
 
         // Assert
         Assert.False(string.IsNullOrWhiteSpace(@event.Id));

@@ -91,12 +91,4 @@ public class InMemoryEventStore : IEventStore
         _currentPosition = 0;
     }
 
-    public void Reset()
-    {
-        lock (_lock)
-        {
-            _events.Clear();
-            _currentPosition = 0;
-        }
-    }
 } 

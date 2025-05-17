@@ -2,36 +2,34 @@ using Core.Domain.Shared.Models;
 using Core.Domain.Shared.ValueObjects;
 using Xunit;
 using Core.Domain.Shared.Interfaces;
+using System.Text.Json;
+using System.Diagnostics;
+using System.IO;
 
     
 namespace Tests.EventStore
 {
     [Collection("EventStore")]
-    public class EventStoreBusinessScenariosTests
+    public class EventStoreContractAndPatternTests
     {
-        private readonly IEventStore _store;
-        private readonly EntityTag _studentTag;
-        private readonly EntityTag _courseTag;
-        private readonly EntityTag _projectionTag;
+        private IEventStore _store;
 
-        public EventStoreBusinessScenariosTests()
+        public EventStoreContractAndPatternTests()
         {
             _store = new InMemoryEventStore();
-            _studentTag = new EntityTag("Student", "STU-2024-001");
-            _courseTag = new EntityTag("Course", "CS-2024-001");
-            _projectionTag = new EntityTag("Projection", "CourseEnrollment");
         }
 
         [Fact]
         public async Task EventHandler_ShouldResumeFromLastPosition()
         {
             // Arrange
-            var handlerTag = new EntityTag("Handler", "NotificationHandler");
+            var studentTag = new EntityTag("Student", "STU-2024-001");
+            var handlerTag = new EntityTag("AcademicNotification", "NotificationHandlerId");
             var events = new[]
             {
-                Event.CreateWithTags("StudentRegistered", new[] { _studentTag, handlerTag }, new { Name = "John Doe", Email = "john@example.com" }),
-                Event.CreateWithTags("StudentProfileUpdated", new[] { _studentTag, handlerTag }, new { Name = "John Doe", Phone = "123-456-7890" }),
-                Event.CreateWithTags("StudentGraduated", new[] { _studentTag, handlerTag }, new { GraduationDate = "2024-05-15", GPA = 3.8 })
+                Event.CreateEventWithTags("StudentRegistered", new[] { studentTag, handlerTag }, new { Name = "John Doe", Email = "john@example.com" }),
+                Event.CreateEventWithTags("StudentProfileUpdated", new[] { studentTag, handlerTag }, new { Name = "John Doe", Phone = "123-456-7890" }),
+                Event.CreateEventWithTags("StudentGraduated", new[] { studentTag, handlerTag }, new { GraduationDate = "2024-05-15", GPA = 3.8 })
             };
 
             // Append events to store
@@ -58,11 +56,14 @@ namespace Tests.EventStore
         public async Task Projection_ShouldUpdateFromLastProcessedPosition()
         {
             // Arrange
+            var studentTag = new EntityTag("Student", "STU-2024-002");
+            var courseTag = new EntityTag("Course", "CS-2024-002");
+            var projectionTag = new EntityTag("Projection", "CourseEnrollment");
             var events = new[]
             {
-                Event.CreateWithTags("CourseEnrolled", new[] { _courseTag, _studentTag, _projectionTag }, new { CourseId = "CS101", StudentId = "STU1", EnrollmentDate = "2024-01-15" }),
-                Event.CreateWithTags("CourseGradeUpdated", new[] { _courseTag, _studentTag, _projectionTag }, new { CourseId = "CS101", StudentId = "STU1", Grade = "A" }),
-                Event.CreateWithTags("CourseDropped", new[] { _courseTag, _studentTag, _projectionTag }, new { CourseId = "CS101", StudentId = "STU1", DropDate = "2024-02-01" })
+                Event.CreateEventWithTags("CourseEnrolled", new[] { courseTag, studentTag, projectionTag }, new { CourseId = "CS102", StudentId = "STU2", EnrollmentDate = "2024-01-15" }),
+                Event.CreateEventWithTags("CourseGradeUpdated", new[] { courseTag, studentTag, projectionTag }, new { CourseId = "CS102", StudentId = "STU2", Grade = "A" }),
+                Event.CreateEventWithTags("CourseDropped", new[] { courseTag, studentTag, projectionTag }, new { CourseId = "CS102", StudentId = "STU2", DropDate = "2024-02-01" })
             };
 
             // Append events to store
@@ -75,7 +76,7 @@ namespace Tests.EventStore
 
             // Act - Simulate projection update from position 1
             var query = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(_projectionTag))
+                .WithSpecification(EventFilterSpecification.ByTag(projectionTag))
                 .FromPosition(2)  // Start from position 2
                 .Build();
             var newEvents = await _store.QueryEventsAsync(query);
@@ -89,12 +90,13 @@ namespace Tests.EventStore
         public async Task EventSubscriber_ShouldCatchUpOnMissedEvents()
         {
             // Arrange
+            var courseTag = new EntityTag("Course", "CS-2024-003");
             var subscriberTag = new EntityTag("Subscriber", "AcademicRecords");
             var events = new[]
             {
-                Event.CreateWithTags("CourseCreated", new[] { _courseTag, subscriberTag }, new { CourseId = "CS101", Title = "Introduction to Programming" }),
-                Event.CreateWithTags("CourseScheduleUpdated", new[] { _courseTag, subscriberTag }, new { CourseId = "CS101", Schedule = "MWF 10:00-11:30" }),
-                Event.CreateWithTags("CourseCancelled", new[] { _courseTag, subscriberTag }, new { CourseId = "CS101", Reason = "Insufficient Enrollment" })
+                Event.CreateEventWithTags("CourseCreated", new[] { courseTag, subscriberTag }, new { CourseId = "CS103", Title = "Introduction to Programming" }),
+                Event.CreateEventWithTags("CourseScheduleUpdated", new[] { courseTag, subscriberTag }, new { CourseId = "CS103", Schedule = "MWF 10:00-11:30" }),
+                Event.CreateEventWithTags("CourseCancelled", new[] { courseTag, subscriberTag }, new { CourseId = "CS103", Reason = "Insufficient Enrollment" })
             };
 
             // Append events to store
@@ -121,16 +123,18 @@ namespace Tests.EventStore
         public async Task Pagination_ShouldHandleLargeEventStreams()
         {
             // Arrange
+            var studentTag = new EntityTag("Student", "STU-2024-004");
+            var courseTag = new EntityTag("Course", "CS-2024-004");
             var pageSize = 2;
             var events = new List<Event>();
             for (int i = 0; i < 5; i++)
             {
-                events.Add(Event.CreateWithTags(
+                events.Add(Event.CreateEventWithTags(
                     "CourseModuleCompleted", 
-                    new[] { _courseTag, _studentTag }, 
+                    new[] { courseTag, studentTag }, 
                     new { 
-                        CourseId = "CS101", 
-                        StudentId = "STU1", 
+                        CourseId = "CS104", 
+                        StudentId = "STU4", 
                         ModuleNumber = i + 1, 
                         CompletionDate = $"2024-0{i+1}-15" 
                     }
@@ -147,7 +151,7 @@ namespace Tests.EventStore
 
             // Act - Get first page
             var firstPageQuery = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(_courseTag))
+                .WithSpecification(EventFilterSpecification.ByTag(courseTag))
                 .FromPosition(0)
                 .WithPageSize(pageSize)
                 .Build();
@@ -155,7 +159,7 @@ namespace Tests.EventStore
 
             // Act - Get second page
             var secondPageQuery = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(_courseTag))
+                .WithSpecification(EventFilterSpecification.ByTag(courseTag))
                 .FromPosition(pageSize)
                 .WithPageSize(pageSize)
                 .Build();
@@ -175,8 +179,9 @@ namespace Tests.EventStore
         public async Task EventProcessing_ShouldHandleEmptyResultSet()
         {
             // Arrange
+            var courseTag = new EntityTag("Course", "CS-2024-005");
             var query = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(_courseTag))
+                .WithSpecification(EventFilterSpecification.ByTag(courseTag))
                 .FromPosition(100)  // Position beyond available events
                 .Build();
 
@@ -191,11 +196,12 @@ namespace Tests.EventStore
         public async Task EventProcessing_ShouldMaintainOrderWithPositionBasedFiltering()
         {
             // Arrange
+            var courseTag = new EntityTag("Course", "CS-2024-006");
             var events = new[]
             {
-                Event.CreateWithTags("CoursePrerequisitesUpdated", new[] { _courseTag }, new { CourseId = "CS101", Prerequisites = new[] { "CS100" } }),
-                Event.CreateWithTags("CourseCapacityUpdated", new[] { _courseTag }, new { CourseId = "CS101", MaxStudents = 30 }),
-                Event.CreateWithTags("CourseInstructorAssigned", new[] { _courseTag }, new { CourseId = "CS101", InstructorId = "PROF123" })
+                Event.CreateEventWithTags("CoursePrerequisitesUpdated", new[] { courseTag }, new { CourseId = "CS106", Prerequisites = new[] { "CS100" } }),
+                Event.CreateEventWithTags("CourseCapacityUpdated", new[] { courseTag }, new { CourseId = "CS106", MaxStudents = 30 }),
+                Event.CreateEventWithTags("CourseInstructorAssigned", new[] { courseTag }, new { CourseId = "CS106", InstructorId = "PROF123" })
             };
 
             // Append events to store
@@ -208,7 +214,7 @@ namespace Tests.EventStore
 
             // Act - Get events from position 1
             var query = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(_courseTag))
+                .WithSpecification(EventFilterSpecification.ByTag(courseTag))
                 .FromPosition(1)
                 .Build();
             var filteredEvents = await _store.QueryEventsAsync(query);
@@ -226,14 +232,14 @@ namespace Tests.EventStore
             // Arrange: Append events as per the diagram
             var events = new[]
             {
-                Event.CreateWithTags("CourseDefined", new[] { new EntityTag("course", "c1") }, new { CourseId = "c1", Title = "Math" }),
-                Event.CreateWithTags("StudentRegistered", new[] { new EntityTag("student", "s1") }, new { StudentId = "s1", Name = "Alice" }),
-                Event.CreateWithTags("StudentRegistered", new[] { new EntityTag("student", "s2") }, new { StudentId = "s2", Name = "Bob" }),
-                Event.CreateWithTags("CourseDefined", new[] { new EntityTag("course", "c2") }, new { CourseId = "c2", Title = "Science" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s1"), new EntityTag("course", "c1") }, new { StudentId = "s1", CourseId = "c1" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s2"), new EntityTag("course", "c1") }, new { StudentId = "s2", CourseId = "c1" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s1"), new EntityTag("course", "c2") }, new { StudentId = "s1", CourseId = "c2" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s2"), new EntityTag("course", "c2") }, new { StudentId = "s2", CourseId = "c2" })
+                Event.CreateEventWithTags("CourseDefined", new[] { new EntityTag("course", "c7-1") }, new { CourseId = "c7-1", Title = "Math" }),
+                Event.CreateEventWithTags("StudentRegistered", new[] { new EntityTag("student", "s7-1") }, new { StudentId = "s7-1", Name = "Alice" }),
+                Event.CreateEventWithTags("StudentRegistered", new[] { new EntityTag("student", "s7-2") }, new { StudentId = "s7-2", Name = "Bob" }),
+                Event.CreateEventWithTags("CourseDefined", new[] { new EntityTag("course", "c7-2") }, new { CourseId = "c7-2", Title = "Science" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s7-1"), new EntityTag("course", "c7-1") }, new { StudentId = "s7-1", CourseId = "c7-1" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s7-2"), new EntityTag("course", "c7-1") }, new { StudentId = "s7-2", CourseId = "c7-1" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s7-1"), new EntityTag("course", "c7-2") }, new { StudentId = "s7-1", CourseId = "c7-2" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s7-2"), new EntityTag("course", "c7-2") }, new { StudentId = "s7-2", CourseId = "c7-2" })
             };
 
             var position = await _store.GetCurrentPositionAsync();
@@ -245,7 +251,7 @@ namespace Tests.EventStore
 
             // Act: Query for all subscriptions of student s2
             var query = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(new EntityTag("student", "s2")))
+                .WithSpecification(EventFilterSpecification.ByTag(new EntityTag("student", "s7-2")))
                 .Build();
             var s2Events = await _store.QueryEventsAsync(query);
 
@@ -253,22 +259,25 @@ namespace Tests.EventStore
             Assert.Equal(3, s2Events.Count); // Registered + 2 subscriptions
             Assert.Contains(s2Events, e => e.EventType == "StudentRegistered");
             Assert.Equal(2, s2Events.Count(e => e.EventType == "StudentSubscribed"));
+            // Assert: s7-2 should have subscribed to two courses
+            Assert.Equal(1, s2Events.Count(e => e.EventType == "StudentSubscribed" && e.Tags.Any(t => t.Entity == "course" && t.Id == "c7-1")));
+            Assert.Equal(1, s2Events.Count(e => e.EventType == "StudentSubscribed" && e.Tags.Any(t => t.Entity == "course" && t.Id == "c7-2")));
         }
 
         [Fact]
-        public async Task DCBQuery_And_DecisionModel_ShouldReflectStudentCourseState()
+        public async Task Should_Query_StudentAndCourse_ConsistencyBoundary_And_Verify_Subscription_State()
         {
             // Arrange: Use the same event stream as above
             var events = new[]
             {
-                Event.CreateWithTags("CourseDefined", new[] { new EntityTag("course", "c1") }, new { CourseId = "c1", Title = "Math" }),
-                Event.CreateWithTags("StudentRegistered", new[] { new EntityTag("student", "s1") }, new { StudentId = "s1", Name = "Alice" }),
-                Event.CreateWithTags("StudentRegistered", new[] { new EntityTag("student", "s2") }, new { StudentId = "s2", Name = "Bob" }),
-                Event.CreateWithTags("CourseDefined", new[] { new EntityTag("course", "c2") }, new { CourseId = "c2", Title = "Science" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s1"), new EntityTag("course", "c1") }, new { StudentId = "s1", CourseId = "c1" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s2"), new EntityTag("course", "c1") }, new { StudentId = "s2", CourseId = "c1" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s1"), new EntityTag("course", "c2") }, new { StudentId = "s1", CourseId = "c2" }),
-                Event.CreateWithTags("StudentSubscribed", new[] { new EntityTag("student", "s2"), new EntityTag("course", "c2") }, new { StudentId = "s2", CourseId = "c2" })
+                Event.CreateEventWithTags("CourseDefined", new[] { new EntityTag("course", "c8-1") }, new { CourseId = "c8-1", Title = "Math" }),
+                Event.CreateEventWithTags("StudentRegistered", new[] { new EntityTag("student", "s8-1") }, new { StudentId = "s8-1", Name = "Alice" }),
+                Event.CreateEventWithTags("StudentRegistered", new[] { new EntityTag("student", "s8-2") }, new { StudentId = "s8-2", Name = "Bob" }),
+                Event.CreateEventWithTags("CourseDefined", new[] { new EntityTag("course", "c8-2") }, new { CourseId = "c8-2", Title = "Science" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s8-1"), new EntityTag("course", "c8-1") }, new { StudentId = "s8-1", CourseId = "c8-1" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s8-2"), new EntityTag("course", "c8-1") }, new { StudentId = "s8-2", CourseId = "c8-1" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s8-1"), new EntityTag("course", "c8-2") }, new { StudentId = "s8-1", CourseId = "c8-2" }),
+                Event.CreateEventWithTags("StudentSubscribed", new[] { new EntityTag("student", "s8-2"), new EntityTag("course", "c8-2") }, new { StudentId = "s8-2", CourseId = "c8-2" })
             };
             var position = await _store.GetCurrentPositionAsync();
             foreach (var @event in events)
@@ -279,23 +288,23 @@ namespace Tests.EventStore
 
             // Act: DCB Query for student:s2 and course:c2
             var dcbQuery = EventQuery.Create()
-                .WithSpecification(EventFilterSpecification.ByTag(new EntityTag("student", "s2")))
-                .WithSpecification(EventFilterSpecification.ByTag(new EntityTag("course", "c2")))
+                .WithSpecification(EventFilterSpecification.ByTag(new EntityTag("student", "s8-2")))
+                .WithSpecification(EventFilterSpecification.ByTag(new EntityTag("course", "c8-2")))
                 .Build();
             var dcbEvents = await _store.QueryEventsAsync(dcbQuery);
 
             // In-memory decision model:
-            bool studentExists = events.Any(e => e.EventType == "StudentRegistered" && e.Tags.Any(t => t.Entity == "student" && t.Id == "s2"));
-            bool courseExists = events.Any(e => e.EventType == "CourseDefined" && e.Tags.Any(t => t.Entity == "course" && t.Id == "c2"));
-            int studentCourseCount = events.Count(e => e.EventType == "StudentSubscribed" && e.Tags.Any(t => t.Entity == "student" && t.Id == "s2"));
-            int courseStudentCount = events.Count(e => e.EventType == "StudentSubscribed" && e.Tags.Any(t => t.Entity == "course" && t.Id == "c2"));
+            bool studentExists = events.Any(e => e.EventType == "StudentRegistered" && e.Tags.Any(t => t.Entity == "student" && t.Id == "s8-2"));
+            bool courseExists = events.Any(e => e.EventType == "CourseDefined" && e.Tags.Any(t => t.Entity == "course" && t.Id == "c8-2"));
+            int studentCourseCount = events.Count(e => e.EventType == "StudentSubscribed" && e.Tags.Any(t => t.Entity == "student" && t.Id == "s8-2"));
+            int courseStudentCount = events.Count(e => e.EventType == "StudentSubscribed" && e.Tags.Any(t => t.Entity == "course" && t.Id == "c8-2"));
 
             // Assert
             Assert.True(studentExists);
             Assert.True(courseExists);
-            Assert.Equal(2, studentCourseCount); // s2 subscribed to 2 courses
-            Assert.Equal(2, courseStudentCount); // c2 has 2 students
-            Assert.Single(dcbEvents); // Only the StudentSubscribed event for s2/c2
+            Assert.Equal(2, studentCourseCount); // s8-2 subscribed to 2 courses
+            Assert.Equal(2, courseStudentCount); // c8-2 has 2 students
+            Assert.Single(dcbEvents); // Only the StudentSubscribed event for s8-2/c8-2
             Assert.Equal("StudentSubscribed", dcbEvents[0].EventType);
         }
     }

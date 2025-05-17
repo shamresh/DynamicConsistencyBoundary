@@ -91,7 +91,7 @@ public class Event
     /// <returns>A new <see cref="Event"/> instance.</returns>
     /// <exception cref="ArgumentException">Thrown when eventType is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown when tags or data is null.</exception>
-    public static Event CreateWithTags(string eventType, IReadOnlyList<EntityTag> tags, object data)
+    public static Event CreateEventWithTags(string eventType, IReadOnlyList<EntityTag> tags, object data)
     {
         if (string.IsNullOrWhiteSpace(eventType))
             throw new ArgumentException("Event type cannot be empty", nameof(eventType));
