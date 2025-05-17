@@ -24,7 +24,7 @@ DCB addresses these challenges by:
 
 The image below illustrates DCB in the context of an academic enrollment system:
 
-![DCB Example](./docs/dcb-example.png)
+![DCB Example](./images/dcb-example.png)
 
 ### 1. Single Event Stream
 
