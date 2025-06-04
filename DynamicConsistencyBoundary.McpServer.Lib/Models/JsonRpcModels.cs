@@ -10,7 +10,7 @@ public class JsonRpcRequest
     public string JsonRpc { get; set; } = "2.0";
 
     [JsonPropertyName("id")]
-    public object? Id { get; set; }
+    public object Id { get; set; } = null!;
 
     [JsonPropertyName("method")]
     public string Method { get; set; } = string.Empty;
@@ -25,10 +25,10 @@ public class JsonRpcResponse
     public string JsonRpc { get; set; } = "2.0";
 
     [JsonPropertyName("id")]
-    public object? Id { get; set; }
+    public object Id { get; set; } = null!;
 
     [JsonPropertyName("result")]
-    public object? Result { get; set; }
+    public ToolCallResult? Result { get; set; }
 
     [JsonPropertyName("error")]
     public JsonRpcError? Error { get; set; }
@@ -41,6 +41,18 @@ public class JsonRpcError
 
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
+
+    [JsonPropertyName("data")]
+    public ErrorData? Data { get; set; }
+}
+
+public class ErrorData
+{
+    [JsonPropertyName("timestamp")]
+    public DateTime Timestamp { get; set; }
+
+    [JsonPropertyName("server")]
+    public string Server { get; set; } = "MCP Stdio Server";
 }
 
 public class InitializeResult
@@ -78,8 +90,11 @@ public class ToolsListResult
 
 public class ToolCallResult
 {
-    [JsonPropertyName("content")]
-    public List<ContentItem> Content { get; set; } = new();
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "success";
+
+    [JsonPropertyName("data")]
+    public ContentItem Data { get; set; } = new();
 }
 
 public class ContentItem
@@ -128,4 +143,13 @@ public class AppendEventParameters
 
     [JsonPropertyName("lastKnownPosition")]
     public long LastKnownPosition { get; set; }
+}
+
+public class ToolCallParameters
+{
+    [JsonPropertyName("tool")]
+    public string Tool { get; set; } = string.Empty;
+
+    [JsonPropertyName("parameters")]
+    public Dictionary<string, object>? Parameters { get; set; }
 } 

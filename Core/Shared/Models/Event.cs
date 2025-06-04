@@ -50,7 +50,7 @@ public class Event
     /// <summary>
     /// Gets the serialized data of the event.
     /// </summary>
-    [JsonPropertyName("Data")]
+    [JsonPropertyName("data")]
     public string SerializedData { get; }
 
     /// <summary>

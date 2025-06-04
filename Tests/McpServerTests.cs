@@ -12,13 +12,13 @@ namespace DynamicConsistencyBoundary.Tests;
 public class McpServerTests
 {
     private readonly Mock<IEventStore> _eventStoreMock;
-    private readonly DynamicConsistencyBoundary.McpServer.McpServer _server;
+    private readonly McpServer.McpServer _server;
     private readonly JsonSerializerOptions _jsonOptions;
 
     public McpServerTests()
     {
         _eventStoreMock = new Mock<IEventStore>();
-        _server = new DynamicConsistencyBoundary.McpServer.McpServer(_eventStoreMock.Object);
+        _server = new McpServer.McpServer(_eventStoreMock.Object);
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -35,14 +35,14 @@ public class McpServerTests
 
         var toolCallParams = new ToolCallParameters
         {
-            Name = "get_current_position",
-            Arguments = new Dictionary<string, object>()
+            Tool = "get_current_position",
+            Parameters = new Dictionary<string, object>()
         };
 
         var request = new JsonRpcRequest
         {
             Id = "1",
-            Method = "tools/call",
+            Method = "mcp/execute",
             Params = JsonSerializer.Serialize(toolCallParams, _jsonOptions)
         };
 
@@ -53,10 +53,8 @@ public class McpServerTests
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
         Assert.Null(response.Error);
-        var result = JsonSerializer.Deserialize<ToolCallResult>(JsonSerializer.Serialize(response.Result, _jsonOptions), _jsonOptions);
-        Assert.NotNull(result);
-        Assert.Single(result.Content);
-        Assert.Equal(expectedPosition.ToString(), result.Content[0].Text);
+        Assert.NotNull(response.Result);
+        Assert.Equal(expectedPosition.ToString(), response.Result.Data.Text);
     }
 
     [Fact]
@@ -75,14 +73,14 @@ public class McpServerTests
 
         var toolCallParams = new ToolCallParameters
         {
-            Name = "query_events",
-            Arguments = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(queryParams, _jsonOptions), _jsonOptions)!
+            Tool = "query_events",
+            Parameters = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(queryParams, _jsonOptions), _jsonOptions)!
         };
 
         var request = new JsonRpcRequest
         {
             Id = "1",
-            Method = "tools/call",
+            Method = "mcp/execute",
             Params = JsonSerializer.Serialize(toolCallParams, _jsonOptions)
         };
 
@@ -93,10 +91,8 @@ public class McpServerTests
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
         Assert.Null(response.Error);
-        var result = JsonSerializer.Deserialize<ToolCallResult>(JsonSerializer.Serialize(response.Result, _jsonOptions), _jsonOptions);
-        Assert.NotNull(result);
-        Assert.Single(result.Content);
-        Assert.Equal(JsonSerializer.Serialize(expectedEvents, _jsonOptions), result.Content[0].Text);
+        Assert.NotNull(response.Result);
+        Assert.Equal(JsonSerializer.Serialize(expectedEvents, _jsonOptions), response.Result.Data.Text);
     }
 
     [Fact]
@@ -119,14 +115,14 @@ public class McpServerTests
 
         var toolCallParams = new ToolCallParameters
         {
-            Name = "append_event",
-            Arguments = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(appendParams, _jsonOptions), _jsonOptions)!
+            Tool = "append_event",
+            Parameters = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(appendParams, _jsonOptions), _jsonOptions)!
         };
 
         var request = new JsonRpcRequest
         {
             Id = "1",
-            Method = "tools/call",
+            Method = "mcp/execute",
             Params = JsonSerializer.Serialize(toolCallParams, _jsonOptions)
         };
 
@@ -137,10 +133,8 @@ public class McpServerTests
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
         Assert.Null(response.Error);
-        var result = JsonSerializer.Deserialize<ToolCallResult>(JsonSerializer.Serialize(response.Result, _jsonOptions), _jsonOptions);
-        Assert.NotNull(result);
-        Assert.Single(result.Content);
-        Assert.Equal("true", result.Content[0].Text);
+        Assert.NotNull(response.Result);
+        Assert.Equal("true", response.Result.Data.Text);
 
         // Verify the event store was called with the correct event properties
         _eventStoreMock.Verify(x => x.AppendEventAsync(

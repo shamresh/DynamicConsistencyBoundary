@@ -4,8 +4,8 @@ namespace DynamicConsistencyBoundary.McpServer;
 
 public class ToolDefinition
 {
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = string.Empty;
+    [JsonPropertyName("tool")]
+    public string Tool { get; set; } = string.Empty;
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;

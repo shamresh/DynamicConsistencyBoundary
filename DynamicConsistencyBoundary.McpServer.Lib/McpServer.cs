@@ -3,6 +3,7 @@ using Core.Domain.Shared.Interfaces;
 using Core.Domain.Shared.Models;
 using Core.Domain.Shared.ValueObjects;
 using DynamicConsistencyBoundary.McpServer.Models;
+using System.Text.Json.Serialization;
 
 namespace DynamicConsistencyBoundary.McpServer;
 
@@ -30,7 +31,7 @@ public class McpServer
         {
             new ToolDefinition
             {
-                Name = "query_events",
+                Tool = "query_events",
                 Description = "Query events from the event store using various filters",
                 Parameters = new ToolParameters
                 {
@@ -71,7 +72,7 @@ public class McpServer
             },
             new ToolDefinition
             {
-                Name = "append_event",
+                Tool = "append_event",
                 Description = "Append a new event to the event store",
                 Parameters = new ToolParameters
                 {
@@ -98,7 +99,7 @@ public class McpServer
             },
             new ToolDefinition
             {
-                Name = "get_current_position",
+                Tool = "get_current_position",
                 Description = "Get the current position in the event store",
                 Parameters = new ToolParameters()
             }
@@ -144,103 +145,98 @@ public class McpServer
     {
         Console.Error.WriteLine($"[DEBUG] Received method: {request.Method} with id: {request.Id}");
 
-        switch (request.Method)
+        if (request.Method != "mcp/execute")
         {
-            case "initialize":
-                return new JsonRpcResponse
+            return new JsonRpcResponse
+            {
+                Id = request.Id,
+                Error = new JsonRpcError
                 {
-                    Id = request.Id,
-                    Result = new InitializeResult()
-                };
-
-            case "initialized":
-            case "notifications/initialized":
-                _isInitialized = true;
-                Console.Error.WriteLine("[DEBUG] MCP server initialized");
-                return new JsonRpcResponse { Id = request.Id };
-
-            case "tools/list":
-                return new JsonRpcResponse
-                {
-                    Id = request.Id,
-                    Result = new ToolsListResult { Tools = _tools }
-                };
-
-            case "tools/call":
-                if (request.Params == null)
-                {
-                    return new JsonRpcResponse
+                    Code = -32601,
+                    Message = $"Method not found: {request.Method}",
+                    Data = new ErrorData
                     {
-                        Id = request.Id,
-                        Error = new JsonRpcError
-                        {
-                            Code = -32602,
-                            Message = "Invalid params - tool name required"
-                        }
-                    };
-                }
-
-                var toolCallParams = JsonSerializer.Deserialize<ToolCallParameters>(request.Params.ToString()!, _jsonOptions);
-                if (toolCallParams == null || string.IsNullOrEmpty(toolCallParams.Name))
-                {
-                    return new JsonRpcResponse
-                    {
-                        Id = request.Id,
-                        Error = new JsonRpcError
-                        {
-                            Code = -32602,
-                            Message = "Invalid params - tool name required"
-                        }
-                    };
-                }
-
-                try
-                {
-                    Console.Error.WriteLine($"[DEBUG] Calling tool: {toolCallParams.Name} with args: {request.Params}");
-                    var result = await ExecuteTool(toolCallParams.Name, toolCallParams.Arguments ?? new Dictionary<string, object>());
-                    Console.Error.WriteLine($"[DEBUG] Tool result: {result}");
-
-                    return new JsonRpcResponse
-                    {
-                        Id = request.Id,
-                        Result = new ToolCallResult
-                        {
-                            Content = new List<ContentItem>
-                            {
-                                new()
-                                {
-                                    Type = "text",
-                                    Text = result is string str ? str : JsonSerializer.Serialize(result, _jsonOptions)
-                                }
-                            }
-                        }
-                    };
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[DEBUG] Tool execution error: {ex}");
-                    return new JsonRpcResponse
-                    {
-                        Id = request.Id,
-                        Error = new JsonRpcError
-                        {
-                            Code = -32603,
-                            Message = ex.Message
-                        }
-                    };
-                }
-
-            default:
-                Console.Error.WriteLine($"[DEBUG] Unknown method: {request.Method}");
-                return new JsonRpcResponse
-                {
-                    Id = request.Id,
-                    Error = new JsonRpcError
-                    {
-                        Code = -32601,
-                        Message = $"Method not found: {request.Method}"
+                        Timestamp = DateTime.UtcNow,
+                        Server = "MCP Stdio Server"
                     }
-                };
+                }
+            };
+        }
+
+        if (request.Params == null)
+        {
+            return new JsonRpcResponse
+            {
+                Id = request.Id,
+                Error = new JsonRpcError
+                {
+                    Code = -32602,
+                    Message = "Invalid params - tool name required",
+                    Data = new ErrorData
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Server = "MCP Stdio Server"
+                    }
+                }
+            };
+        }
+
+        var toolCallParams = JsonSerializer.Deserialize<ToolCallParameters>(request.Params.ToString()!, _jsonOptions);
+        if (toolCallParams == null || string.IsNullOrEmpty(toolCallParams.Tool))
+        {
+            return new JsonRpcResponse
+            {
+                Id = request.Id,
+                Error = new JsonRpcError
+                {
+                    Code = -32602,
+                    Message = "Invalid params - tool name required",
+                    Data = new ErrorData
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Server = "MCP Stdio Server"
+                    }
+                }
+            };
+        }
+
+        try
+        {
+            Console.Error.WriteLine($"[DEBUG] Calling tool: {toolCallParams.Tool} with args: {request.Params}");
+            var result = await ExecuteTool(toolCallParams.Tool, toolCallParams.Parameters ?? new Dictionary<string, object>());
+            Console.Error.WriteLine($"[DEBUG] Tool result: {result}");
+
+            return new JsonRpcResponse
+            {
+                Id = request.Id,
+                Result = new ToolCallResult
+                {
+                    Status = "success",
+                    Data = new ContentItem
+                    {
+                        Type = "text",
+                        Text = result is string str ? str : JsonSerializer.Serialize(result, _jsonOptions)
+                    }
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[DEBUG] Tool execution error: {ex}");
+            return new JsonRpcResponse
+            {
+                Id = request.Id,
+                Error = new JsonRpcError
+                {
+                    Code = -32603,
+                    Message = ex.Message,
+                    Data = new ErrorData
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Server = "MCP Stdio Server"
+                    }
+                }
+            };
         }
     }
 
@@ -276,8 +272,8 @@ public class McpServer
         {
             tags = tagsElement.EnumerateArray()
                 .Select(t => new EntityTag(
-                    t.GetProperty("key").GetString()!,
-                    t.GetProperty("value").GetString()!
+                    t.GetProperty("entity").GetString()!,
+                    t.GetProperty("id").GetString()!
                 ))
                 .ToList();
 
@@ -306,7 +302,7 @@ public class McpServer
             e.Position,
             e.EventType,
             e.Timestamp,
-            Tags = e.Tags.Select(t => new { key = t.Entity, value = t.Id }).ToList(),
+            Tags = e.Tags.Select(t => new { entity = t.Entity, id = t.Id }).ToList(),
             Data = e.SerializedData
         });
 
@@ -315,26 +311,35 @@ public class McpServer
 
     private async Task<object> HandleAppendEvent(Dictionary<string, object> arguments)
     {
-        // Deserialize the arguments into AppendEventParameters
-        var appendParams = JsonSerializer.Deserialize<AppendEventParameters>(
-            JsonSerializer.Serialize(arguments, _jsonOptions),
-            _jsonOptions
-        );
-
-        if (appendParams == null)
+        if (!arguments.TryGetValue("event", out var eventObj) || eventObj is not JsonElement eventElement)
         {
-            throw new ArgumentException("Invalid parameters");
+            throw new ArgumentException("Invalid event parameter");
         }
 
-        await _eventStore.AppendEventAsync(appendParams.Event, appendParams.Query, appendParams.LastKnownPosition);
-        return true;
-    }
+        if (!arguments.TryGetValue("query", out var queryObj) || queryObj is not JsonElement queryElement)
+        {
+            throw new ArgumentException("Invalid query parameter");
+        }
 
-    private class AppendEventParameters
-    {
-        public Event Event { get; set; } = null!;
-        public EventQuery Query { get; set; } = null!;
-        public long LastKnownPosition { get; set; }
+        if (!arguments.TryGetValue("lastKnownPosition", out var positionObj) || positionObj is not JsonElement positionElement)
+        {
+            throw new ArgumentException("Invalid lastKnownPosition parameter");
+        }
+
+        // Debug logging
+        Console.Error.WriteLine($"[DEBUG] Event JSON: {eventElement.GetRawText()}");
+
+        var @event = JsonSerializer.Deserialize<Event>(eventElement.GetRawText(), _jsonOptions);
+        var query = JsonSerializer.Deserialize<EventQuery>(queryElement.GetRawText(), _jsonOptions);
+        var lastKnownPosition = positionElement.GetInt64();
+
+        if (@event == null || query == null)
+        {
+            throw new ArgumentException("Failed to deserialize event or query");
+        }
+
+        await _eventStore.AppendEventAsync(@event, query, lastKnownPosition);
+        return true;
     }
 
     private async Task<object> HandleGetCurrentPosition()
@@ -352,7 +357,12 @@ public class McpServer
                 Error = new JsonRpcError
                 {
                     Code = code,
-                    Message = message
+                    Message = message,
+                    Data = new ErrorData
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Server = "MCP Stdio Server"
+                    }
                 }
             };
             Console.Error.WriteLine($"[DEBUG] Sending error response: {JsonSerializer.Serialize(error, _jsonOptions)}");
@@ -364,10 +374,4 @@ public class McpServer
             Console.Error.WriteLine($"[ERROR] Cannot send error response without valid id: {{ code: {code}, message: {message} }}");
         }
     }
-}
-
-public class ToolCallParameters
-{
-    public string Name { get; set; } = string.Empty;
-    public Dictionary<string, object>? Arguments { get; set; }
 } 
