@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Core\DynamicConsistencyBoundary.Core.csproj" />
+    <ProjectReference Include="..\Infrastructure\DynamicConsistencyBoundary.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

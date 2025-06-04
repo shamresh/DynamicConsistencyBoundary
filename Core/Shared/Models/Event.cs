@@ -11,6 +11,11 @@ namespace Core.Domain.Shared.Models;
 /// </summary>
 public class Event
 {
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     /// <summary>
     /// Gets the unique identifier of the event.
     /// </summary>
@@ -79,7 +84,34 @@ public class Event
         Timestamp = timestamp;
         Tags = tags;
         Data = data;
-        SerializedData = JsonSerializer.Serialize(data);
+        SerializedData = JsonSerializer.Serialize(data, _jsonOptions);
+    }
+
+    /// <summary>
+    /// JSON constructor for deserialization.
+    /// </summary>
+    [JsonConstructor]
+    public Event(string id, long position, string eventType, DateTime timestamp, IReadOnlyList<EntityTag> tags, string serializedData)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            throw new ArgumentException("Id cannot be empty", nameof(id));
+
+        if (string.IsNullOrWhiteSpace(eventType))
+            throw new ArgumentException("Event type cannot be empty", nameof(eventType));
+
+        if (tags == null)
+            throw new ArgumentNullException(nameof(tags));
+
+        if (string.IsNullOrEmpty(serializedData))
+            throw new ArgumentException("Serialized data cannot be empty", nameof(serializedData));
+
+        Id = id;
+        Position = position;
+        EventType = eventType;
+        Timestamp = timestamp;
+        Tags = tags;
+        SerializedData = serializedData;
+        Data = JsonSerializer.Deserialize<object>(serializedData, _jsonOptions)!;
     }
 
     /// <summary>

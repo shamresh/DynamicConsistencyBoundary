@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Infrastructure\DynamicConsistencyBoundary.Infrastructure.csproj" />
+    <ProjectReference Include="..\DynamicConsistencyBoundary.McpServer.Lib\DynamicConsistencyBoundary.McpServer.Lib.csproj" />
   </ItemGroup>
 
 </Project>

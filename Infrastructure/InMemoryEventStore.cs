@@ -50,13 +50,41 @@ public class InMemoryEventStore : IEventStore
             // Start with all events ordered by position
             var events = _events.OrderBy(e => e.Position).AsEnumerable();
 
-            // Apply tag and event type filters first
+            // Apply filters
             if (query.Filters.Any())
             {
                 events = events.Where(e =>
-                    query.Filters.All(f =>
-                        (f.EventType == null || f.EventType == e.EventType) &&
-                        (f.Tags == null || f.Tags.All(tag => e.Tags.Contains(tag)))));
+                {
+                    // Check if all filters match the event
+                    return query.Filters.All(filter =>
+                    {
+                        // Check event type if specified
+                        if (filter.EventType != null)
+                        {
+                            if (filter.EventType != e.EventType)
+                                return false;
+                        }
+
+                        // Check tags if specified
+                        if (filter.Tags != null && filter.Tags.Any())
+                        {
+                            if (filter.MatchAnyTag)
+                            {
+                                // Match any tag
+                                if (!filter.Tags.Any(tag => e.Tags.Contains(tag)))
+                                    return false;
+                            }
+                            else
+                            {
+                                // Match all tags
+                                if (!filter.Tags.All(tag => e.Tags.Contains(tag)))
+                                    return false;
+                            }
+                        }
+
+                        return true;
+                    });
+                });
             }
 
             // Then apply position filter

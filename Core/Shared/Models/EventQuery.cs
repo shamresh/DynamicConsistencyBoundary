@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace Core.Domain.Shared.Models;
 
@@ -29,9 +30,10 @@ public class EventQuery
     /// <param name="filters">The filters to apply to the query.</param>
     /// <param name="fromPosition">The position to start reading from.</param>
     /// <param name="pageSize">The maximum number of events to return.</param>
-    private EventQuery(IReadOnlyList<EventFilterSpecification> filters, long? fromPosition, int? pageSize)
+    [JsonConstructor]
+    internal EventQuery(IReadOnlyList<EventFilterSpecification> filters, long? fromPosition, int? pageSize)
     {
-        Filters = filters;
+        Filters = filters ?? Array.Empty<EventFilterSpecification>();
         FromPosition = fromPosition;
         PageSize = pageSize;
     }
