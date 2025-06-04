@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using Core.Domain.Shared.Models;
 using Core.Domain.Shared.ValueObjects;
-namespace Tests;
 
+namespace Infrastructure;
 /// <summary>
 /// A builder class for creating test data for the in-memory event store.
 /// </summary>

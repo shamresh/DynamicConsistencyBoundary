@@ -1,7 +1,7 @@
 using Core.Domain.Shared.Models;
 using Core.Domain.Shared.Interfaces;
 
-namespace Tests;
+namespace Infrastructure;
 
 /// <summary>
 /// An in-memory implementation of <see cref="IEventStore"/> for testing purposes.

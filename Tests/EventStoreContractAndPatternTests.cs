@@ -5,6 +5,7 @@ using Core.Domain.Shared.Interfaces;
 using System.Text.Json;
 using System.Diagnostics;
 using System.IO;
+using Infrastructure;
 
     
 namespace Tests.EventStore
