@@ -1,21 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Core\DynamicConsistencyBoundary.Core.csproj" />
-    <ProjectReference Include="..\Infrastructure\DynamicConsistencyBoundary.Infrastructure.csproj" />
-    <ProjectReference Include="..\DynamicConsistencyBoundary.McpServer.Lib\DynamicConsistencyBoundary.McpServer.Lib.csproj" />
+    <ProjectReference Include="..\Core\DynamicConsistencyBoundary.Core.csproj">
+      <Private>true</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Infrastructure\DynamicConsistencyBoundary.Infrastructure.csproj">
+      <Private>true</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\DynamicConsistencyBoundary.McpServer.Lib\DynamicConsistencyBoundary.McpServer.Lib.csproj">
+      <Private>true</Private>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

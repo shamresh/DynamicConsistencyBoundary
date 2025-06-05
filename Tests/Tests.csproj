@@ -31,8 +31,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Infrastructure\DynamicConsistencyBoundary.Infrastructure.csproj" />
-    <ProjectReference Include="..\DynamicConsistencyBoundary.McpServer.Lib\DynamicConsistencyBoundary.McpServer.Lib.csproj" />
+    <ProjectReference Include="..\Core\DynamicConsistencyBoundary.Core.csproj">
+      <Private>true</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Infrastructure\DynamicConsistencyBoundary.Infrastructure.csproj">
+      <Private>true</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\DynamicConsistencyBoundary.McpServer.Lib\DynamicConsistencyBoundary.McpServer.Lib.csproj">
+      <Private>true</Private>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>

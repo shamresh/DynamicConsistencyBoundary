@@ -1,7 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Core\DynamicConsistencyBoundary.Core.csproj" />
+    <ProjectReference Include="..\Core\DynamicConsistencyBoundary.Core.csproj">
+      <Private>true</Private>
+    </ProjectReference>
   </ItemGroup>
 
   <PropertyGroup>

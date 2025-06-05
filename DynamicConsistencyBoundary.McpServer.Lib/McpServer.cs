@@ -12,7 +12,6 @@ public class McpServer
     private readonly IEventStore _eventStore;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly List<ToolDefinition> _tools;
-    private bool _isInitialized;
 
     public McpServer(IEventStore eventStore)
     {
@@ -22,7 +21,6 @@ public class McpServer
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
         _tools = InitializeTools();
-        _isInitialized = false;
     }
 
     private List<ToolDefinition> InitializeTools()
@@ -145,98 +143,147 @@ public class McpServer
     {
         Console.Error.WriteLine($"[DEBUG] Received method: {request.Method} with id: {request.Id}");
 
-        if (request.Method != "mcp/execute")
+        switch (request.Method)
         {
-            return new JsonRpcResponse
-            {
-                Id = request.Id,
-                Error = new JsonRpcError
+            case "initialize":
+                return new JsonRpcResponse
                 {
-                    Code = -32601,
-                    Message = $"Method not found: {request.Method}",
-                    Data = new ErrorData
+                    Id = request.Id,
+                    Result = new ToolCallResult
                     {
-                        Timestamp = DateTime.UtcNow,
-                        Server = "MCP Stdio Server"
+                        Status = "success",
+                        Data = new ContentItem
+                        {
+                            Type = "text",
+                            Text = JsonSerializer.Serialize(new InitializeResult(), _jsonOptions)
+                        }
                     }
-                }
-            };
-        }
+                };
 
-        if (request.Params == null)
-        {
-            return new JsonRpcResponse
-            {
-                Id = request.Id,
-                Error = new JsonRpcError
+            case "initialized":
+            case "notifications/initialized":
+                Console.Error.WriteLine("[DEBUG] MCP server initialized");
+                return new JsonRpcResponse
                 {
-                    Code = -32602,
-                    Message = "Invalid params - tool name required",
-                    Data = new ErrorData
+                    Id = request.Id,
+                    Result = new ToolCallResult
                     {
-                        Timestamp = DateTime.UtcNow,
-                        Server = "MCP Stdio Server"
+                        Status = "success",
+                        Data = new ContentItem
+                        {
+                            Type = "text",
+                            Text = "{}"
+                        }
                     }
-                }
-            };
-        }
+                };
 
-        var toolCallParams = JsonSerializer.Deserialize<ToolCallParameters>(request.Params.ToString()!, _jsonOptions);
-        if (toolCallParams == null || string.IsNullOrEmpty(toolCallParams.Tool))
-        {
-            return new JsonRpcResponse
-            {
-                Id = request.Id,
-                Error = new JsonRpcError
+            case "tools/list":
+                return new JsonRpcResponse
                 {
-                    Code = -32602,
-                    Message = "Invalid params - tool name required",
-                    Data = new ErrorData
+                    Id = request.Id,
+                    Result = new ToolCallResult
                     {
-                        Timestamp = DateTime.UtcNow,
-                        Server = "MCP Stdio Server"
+                        Status = "success",
+                        Data = new ContentItem
+                        {
+                            Type = "text",
+                            Text = JsonSerializer.Serialize(new ToolsListResult { Tools = _tools }, _jsonOptions)
+                        }
                     }
-                }
-            };
-        }
+                };
 
-        try
-        {
-            Console.Error.WriteLine($"[DEBUG] Calling tool: {toolCallParams.Tool} with args: {request.Params}");
-            var result = await ExecuteTool(toolCallParams.Tool, toolCallParams.Parameters ?? new Dictionary<string, object>());
-            Console.Error.WriteLine($"[DEBUG] Tool result: {result}");
+            case "mcp/execute":
+                if (request.Params == null)
+                {
+                    return new JsonRpcResponse
+                    {
+                        Id = request.Id,
+                        Error = new JsonRpcError
+                        {
+                            Code = -32602,
+                            Message = "Invalid params - tool name required",
+                            Data = new ErrorData
+                            {
+                                Timestamp = DateTime.UtcNow,
+                                Server = "MCP Stdio Server"
+                            }
+                        }
+                    };
+                }
 
-            return new JsonRpcResponse
-            {
-                Id = request.Id,
-                Result = new ToolCallResult
+                var toolCallParams = JsonSerializer.Deserialize<ToolCallParameters>(request.Params.ToString()!, _jsonOptions);
+                if (toolCallParams == null || string.IsNullOrEmpty(toolCallParams.Tool))
                 {
-                    Status = "success",
-                    Data = new ContentItem
+                    return new JsonRpcResponse
                     {
-                        Type = "text",
-                        Text = result is string str ? str : JsonSerializer.Serialize(result, _jsonOptions)
-                    }
+                        Id = request.Id,
+                        Error = new JsonRpcError
+                        {
+                            Code = -32602,
+                            Message = "Invalid params - tool name required",
+                            Data = new ErrorData
+                            {
+                                Timestamp = DateTime.UtcNow,
+                                Server = "MCP Stdio Server"
+                            }
+                        }
+                    };
                 }
-            };
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[DEBUG] Tool execution error: {ex}");
-            return new JsonRpcResponse
-            {
-                Id = request.Id,
-                Error = new JsonRpcError
+
+                try
                 {
-                    Code = -32603,
-                    Message = ex.Message,
-                    Data = new ErrorData
+                    Console.Error.WriteLine($"[DEBUG] Calling tool: {toolCallParams.Tool} with args: {request.Params}");
+                    var result = await ExecuteTool(toolCallParams.Tool, toolCallParams.Parameters ?? new Dictionary<string, object>());
+                    Console.Error.WriteLine($"[DEBUG] Tool result: {result}");
+
+                    return new JsonRpcResponse
                     {
-                        Timestamp = DateTime.UtcNow,
-                        Server = "MCP Stdio Server"
-                    }
+                        Id = request.Id,
+                        Result = new ToolCallResult
+                        {
+                            Status = "success",
+                            Data = new ContentItem
+                            {
+                                Type = "text",
+                                Text = result is string str ? str : JsonSerializer.Serialize(result, _jsonOptions)
+                            }
+                        }
+                    };
                 }
-            };
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[DEBUG] Tool execution error: {ex}");
+                    return new JsonRpcResponse
+                    {
+                        Id = request.Id,
+                        Error = new JsonRpcError
+                        {
+                            Code = -32603,
+                            Message = ex.Message,
+                            Data = new ErrorData
+                            {
+                                Timestamp = DateTime.UtcNow,
+                                Server = "MCP Stdio Server"
+                            }
+                        }
+                    };
+                }
+
+            default:
+                return new JsonRpcResponse
+                {
+                    Id = request.Id,
+                    Error = new JsonRpcError
+                    {
+                        Code = -32601,
+                        Message = $"Method not found: {request.Method}",
+                        Data = new ErrorData
+                        {
+                            Timestamp = DateTime.UtcNow,
+                            Server = "MCP Stdio Server"
+                        }
+                    }
+                };
         }
     }
 
