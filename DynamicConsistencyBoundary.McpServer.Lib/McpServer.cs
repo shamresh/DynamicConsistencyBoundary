@@ -18,7 +18,8 @@ public class McpServer
         _eventStore = eventStore;
         _jsonOptions = new JsonSerializerOptions
         {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
         _tools = InitializeTools();
     }
@@ -29,9 +30,9 @@ public class McpServer
         {
             new ToolDefinition
             {
-                Tool = "query_events",
+                Name = "query_events",
                 Description = "Query events from the event store using various filters",
-                Parameters = new ToolParameters
+                InputSchema = new ToolInputSchema
                 {
                     Properties = new Dictionary<string, ToolParameterProperty>
                     {
@@ -70,9 +71,9 @@ public class McpServer
             },
             new ToolDefinition
             {
-                Tool = "append_event",
+                Name = "append_event",
                 Description = "Append a new event to the event store",
-                Parameters = new ToolParameters
+                InputSchema = new ToolInputSchema
                 {
                     Properties = new Dictionary<string, ToolParameterProperty>
                     {
@@ -97,15 +98,21 @@ public class McpServer
             },
             new ToolDefinition
             {
-                Tool = "get_current_position",
+                Name = "get_current_position",
                 Description = "Get the current position in the event store",
-                Parameters = new ToolParameters()
+                InputSchema = new ToolInputSchema()
             }
         };
     }
 
     public async Task RunAsync()
     {
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
         while (true)
         {
             var line = await Console.In.ReadLineAsync();
@@ -113,7 +120,7 @@ public class McpServer
 
             try
             {
-                var request = JsonSerializer.Deserialize<JsonRpcRequest>(line, _jsonOptions);
+                var request = JsonSerializer.Deserialize<JsonRpcRequest>(line, jsonOptions);
                 if (request == null) continue;
 
                 // Validate JSON-RPC 2.0 request
@@ -124,166 +131,103 @@ public class McpServer
                 }
 
                 var response = await HandleRequest(request);
-                var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
-                await Console.Out.WriteLineAsync(responseJson);
-                await Console.Out.FlushAsync();
+                if (response != null) // Only send response if we got one back
+                {
+                    var responseJson = JsonSerializer.Serialize(response, jsonOptions);
+                    await Console.Out.WriteLineAsync(responseJson);
+                    await Console.Out.FlushAsync();
+                }
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                Console.Error.WriteLine($"[ERROR] JSON Parse error: {ex.Message}");
                 await SendErrorAsync(null, -32700, "Parse error");
             }
             catch (Exception ex)
             {
+                Console.Error.WriteLine($"[ERROR] Internal error: {ex.Message}");
                 await SendErrorAsync(null, -32603, $"Internal error: {ex.Message}");
             }
         }
     }
 
-    public async Task<JsonRpcResponse> HandleRequest(JsonRpcRequest request)
+    public async Task<Models.JsonRpcResponse?> HandleRequest(JsonRpcRequest request)
     {
         Console.Error.WriteLine($"[DEBUG] Received method: {request.Method} with id: {request.Id}");
 
+        // Handle notifications (requests without id)
+        if (request.Id == null)
+        {
+            switch (request.Method)
+            {
+                case "notifications/initialized":
+                    Console.Error.WriteLine("[DEBUG] Received initialized notification");
+                    return null; // Don't send response for notifications
+                default:
+                    Console.Error.WriteLine($"[DEBUG] Unknown notification method: {request.Method}");
+                    return null;
+            }
+        }
+
+        // Handle regular requests (with id)
         switch (request.Method)
         {
             case "initialize":
-                return new JsonRpcResponse
+                return JsonRpcSuccessResponse.Create(request.Id, new
                 {
-                    Id = request.Id,
-                    Result = new ToolCallResult
+                    protocolVersion = "2024-11-05",
+                    capabilities = new
                     {
-                        Status = "success",
-                        Data = new ContentItem
-                        {
-                            Type = "text",
-                            Text = JsonSerializer.Serialize(new InitializeResult(), _jsonOptions)
-                        }
-                    }
-                };
-
-            case "initialized":
-            case "notifications/initialized":
-                Console.Error.WriteLine("[DEBUG] MCP server initialized");
-                return new JsonRpcResponse
-                {
-                    Id = request.Id,
-                    Result = new ToolCallResult
+                        tools = new { }
+                    },
+                    serverInfo = new
                     {
-                        Status = "success",
-                        Data = new ContentItem
-                        {
-                            Type = "text",
-                            Text = "{}"
-                        }
+                        name = "dynamic-consistency-boundary",
+                        version = "1.0.0"
                     }
-                };
+                });
 
             case "tools/list":
-                return new JsonRpcResponse
-                {
-                    Id = request.Id,
-                    Result = new ToolCallResult
-                    {
-                        Status = "success",
-                        Data = new ContentItem
-                        {
-                            Type = "text",
-                            Text = JsonSerializer.Serialize(new ToolsListResult { Tools = _tools }, _jsonOptions)
-                        }
-                    }
-                };
+                return JsonRpcSuccessResponse.Create(request.Id, new { tools = _tools });
 
-            case "mcp/execute":
+            case "tools/call":
                 if (request.Params == null)
                 {
-                    return new JsonRpcResponse
-                    {
-                        Id = request.Id,
-                        Error = new JsonRpcError
-                        {
-                            Code = -32602,
-                            Message = "Invalid params - tool name required",
-                            Data = new ErrorData
-                            {
-                                Timestamp = DateTime.UtcNow,
-                                Server = "MCP Stdio Server"
-                            }
-                        }
-                    };
+                    return JsonRpcErrorResponse.Create(request.Id, -32602, "Invalid params - tool name required");
                 }
 
                 var toolCallParams = JsonSerializer.Deserialize<ToolCallParameters>(request.Params.ToString()!, _jsonOptions);
-                if (toolCallParams == null || string.IsNullOrEmpty(toolCallParams.Tool))
+                if (toolCallParams == null || string.IsNullOrEmpty(toolCallParams.Name))
                 {
-                    return new JsonRpcResponse
-                    {
-                        Id = request.Id,
-                        Error = new JsonRpcError
-                        {
-                            Code = -32602,
-                            Message = "Invalid params - tool name required",
-                            Data = new ErrorData
-                            {
-                                Timestamp = DateTime.UtcNow,
-                                Server = "MCP Stdio Server"
-                            }
-                        }
-                    };
+                    return JsonRpcErrorResponse.Create(request.Id, -32602, "Invalid params - tool name required");
                 }
 
                 try
                 {
-                    Console.Error.WriteLine($"[DEBUG] Calling tool: {toolCallParams.Tool} with args: {request.Params}");
-                    var result = await ExecuteTool(toolCallParams.Tool, toolCallParams.Parameters ?? new Dictionary<string, object>());
-                    Console.Error.WriteLine($"[DEBUG] Tool result: {result}");
+                    Console.Error.WriteLine($"[DEBUG] Calling tool: {toolCallParams.Name} with args: {JsonSerializer.Serialize(toolCallParams.Arguments, _jsonOptions)}");
+                    var result = await ExecuteTool(toolCallParams.Name, toolCallParams.Arguments ?? new Dictionary<string, object>());
+                    Console.Error.WriteLine($"[DEBUG] Tool result: {JsonSerializer.Serialize(result, _jsonOptions)}");
 
-                    return new JsonRpcResponse
+                    return JsonRpcSuccessResponse.Create(request.Id, new
                     {
-                        Id = request.Id,
-                        Result = new ToolCallResult
+                        content = new[]
                         {
-                            Status = "success",
-                            Data = new ContentItem
+                            new
                             {
-                                Type = "text",
-                                Text = result is string str ? str : JsonSerializer.Serialize(result, _jsonOptions)
+                                type = "text",
+                                text = result is string str ? str : JsonSerializer.Serialize(result, _jsonOptions)
                             }
                         }
-                    };
+                    });
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[DEBUG] Tool execution error: {ex}");
-                    return new JsonRpcResponse
-                    {
-                        Id = request.Id,
-                        Error = new JsonRpcError
-                        {
-                            Code = -32603,
-                            Message = ex.Message,
-                            Data = new ErrorData
-                            {
-                                Timestamp = DateTime.UtcNow,
-                                Server = "MCP Stdio Server"
-                            }
-                        }
-                    };
+                    Console.Error.WriteLine($"[ERROR] Tool execution error: {ex}");
+                    return JsonRpcErrorResponse.Create(request.Id, -32603, ex.Message);
                 }
 
             default:
-                return new JsonRpcResponse
-                {
-                    Id = request.Id,
-                    Error = new JsonRpcError
-                    {
-                        Code = -32601,
-                        Message = $"Method not found: {request.Method}",
-                        Data = new ErrorData
-                        {
-                            Timestamp = DateTime.UtcNow,
-                            Server = "MCP Stdio Server"
-                        }
-                    }
-                };
+                return JsonRpcErrorResponse.Create(request.Id, -32601, $"Method not found: {request.Method}");
         }
     }
 
@@ -339,20 +283,17 @@ public class McpServer
         {
             if (tags != null && tags.Any())
             {
-                // Both event type and tags are provided
                 Console.Error.WriteLine($"[DEBUG] Using ByEventTypeAndTags with eventType: {eventType}, tags: {JsonSerializer.Serialize(tags, _jsonOptions)}, matchAnyTag: {matchAnyTag}");
                 queryBuilder.WithSpecification(EventFilterSpecification.ByEventTypeAndTags(eventType, tags, matchAnyTag));
             }
             else
             {
-                // Only event type is provided
                 Console.Error.WriteLine($"[DEBUG] Using ByEventType with eventType: {eventType}");
                 queryBuilder.WithSpecification(EventFilterSpecification.ByEventType(eventType));
             }
         }
         else if (tags != null && tags.Any())
         {
-            // Only tags are provided
             Console.Error.WriteLine($"[DEBUG] Using ByTags with tags: {JsonSerializer.Serialize(tags, _jsonOptions)}, matchAnyTag: {matchAnyTag}");
             queryBuilder.WithSpecification(EventFilterSpecification.ByTags(tags, matchAnyTag));
         }
@@ -384,7 +325,7 @@ public class McpServer
             Data = e.SerializedData
         });
 
-        return JsonSerializer.Serialize(formattedEvents, _jsonOptions);
+        return formattedEvents;
     }
 
     private async Task<object> HandleAppendEvent(Dictionary<string, object> arguments)
@@ -417,39 +358,21 @@ public class McpServer
         }
 
         await _eventStore.AppendEventAsync(@event, query, lastKnownPosition);
-        return true;
+        return new { success = true };
     }
 
     private async Task<object> HandleGetCurrentPosition()
     {
-        return await _eventStore.GetCurrentPositionAsync();
+        return new { position = await _eventStore.GetCurrentPositionAsync() };
     }
 
     private async Task SendErrorAsync(object? id, int code, string message)
     {
-        if (id != null)
-        {
-            var error = new JsonRpcResponse
-            {
-                Id = id,
-                Error = new JsonRpcError
-                {
-                    Code = code,
-                    Message = message,
-                    Data = new ErrorData
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        Server = "MCP Stdio Server"
-                    }
-                }
-            };
-            Console.Error.WriteLine($"[DEBUG] Sending error response: {JsonSerializer.Serialize(error, _jsonOptions)}");
-            await Console.Out.WriteLineAsync(JsonSerializer.Serialize(error, _jsonOptions));
-            await Console.Out.FlushAsync();
-        }
-        else
-        {
-            Console.Error.WriteLine($"[ERROR] Cannot send error response without valid id: {{ code: {code}, message: {message} }}");
-        }
+        var error = JsonRpcErrorResponse.Create(id, code, message);
+        Console.Error.WriteLine($"[DEBUG] Sending error response: {JsonSerializer.Serialize(error, _jsonOptions)}");
+        await Console.Out.WriteLineAsync(JsonSerializer.Serialize(error, _jsonOptions));
+        await Console.Out.FlushAsync();
     }
-} 
+}
+
+
