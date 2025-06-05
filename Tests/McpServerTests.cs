@@ -35,14 +35,14 @@ public class McpServerTests
 
         var toolCallParams = new ToolCallParameters
         {
-            Tool = "get_current_position",
-            Parameters = new Dictionary<string, object>()
+            Name = "get_current_position",
+            Arguments = new Dictionary<string, object>()
         };
 
         var request = new JsonRpcRequest
         {
             Id = "1",
-            Method = "mcp/execute",
+            Method = "tools/call",
             Params = JsonSerializer.Serialize(toolCallParams, _jsonOptions)
         };
 
@@ -52,9 +52,20 @@ public class McpServerTests
         // Assert
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
-        Assert.Null(response.Error);
-        Assert.NotNull(response.Result);
-        Assert.Equal(expectedPosition.ToString(), response.Result.Data.Text);
+        
+        var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+        var responseElement = JsonSerializer.Deserialize<JsonElement>(responseJson);
+        
+        Assert.False(responseElement.TryGetProperty("error", out _));
+        Assert.True(responseElement.TryGetProperty("result", out var resultElement));
+        Assert.True(resultElement.TryGetProperty("content", out var contentElement));
+        Assert.Equal(1, contentElement.GetArrayLength());
+        
+        var content = contentElement[0];
+        Assert.Equal("text", content.GetProperty("type").GetString());
+        var resultText = content.GetProperty("text").GetString();
+        var resultObj = JsonSerializer.Deserialize<JsonElement>(resultText!);
+        Assert.Equal(expectedPosition, resultObj.GetProperty("position").GetInt64());
     }
 
     [Fact]
@@ -73,14 +84,14 @@ public class McpServerTests
 
         var toolCallParams = new ToolCallParameters
         {
-            Tool = "query_events",
-            Parameters = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(queryParams, _jsonOptions), _jsonOptions)!
+            Name = "query_events",
+            Arguments = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(queryParams, _jsonOptions), _jsonOptions)!
         };
 
         var request = new JsonRpcRequest
         {
             Id = "1",
-            Method = "mcp/execute",
+            Method = "tools/call",
             Params = JsonSerializer.Serialize(toolCallParams, _jsonOptions)
         };
 
@@ -90,9 +101,20 @@ public class McpServerTests
         // Assert
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
-        Assert.Null(response.Error);
-        Assert.NotNull(response.Result);
-        Assert.Equal(JsonSerializer.Serialize(expectedEvents, _jsonOptions), response.Result.Data.Text);
+        
+        var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+        var responseElement = JsonSerializer.Deserialize<JsonElement>(responseJson);
+        
+        Assert.False(responseElement.TryGetProperty("error", out _));
+        Assert.True(responseElement.TryGetProperty("result", out var resultElement));
+        Assert.True(resultElement.TryGetProperty("content", out var contentElement));
+        Assert.Equal(1, contentElement.GetArrayLength());
+        
+        var content = contentElement[0];
+        Assert.Equal("text", content.GetProperty("type").GetString());
+        var resultText = content.GetProperty("text").GetString();
+        var resultArray = JsonSerializer.Deserialize<JsonElement>(resultText!);
+        Assert.Equal(0, resultArray.GetArrayLength());
     }
 
     [Fact]
@@ -115,14 +137,14 @@ public class McpServerTests
 
         var toolCallParams = new ToolCallParameters
         {
-            Tool = "append_event",
-            Parameters = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(appendParams, _jsonOptions), _jsonOptions)!
+            Name = "append_event",
+            Arguments = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(appendParams, _jsonOptions), _jsonOptions)!
         };
 
         var request = new JsonRpcRequest
         {
             Id = "1",
-            Method = "mcp/execute",
+            Method = "tools/call",
             Params = JsonSerializer.Serialize(toolCallParams, _jsonOptions)
         };
 
@@ -132,9 +154,20 @@ public class McpServerTests
         // Assert
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
-        Assert.Null(response.Error);
-        Assert.NotNull(response.Result);
-        Assert.Equal("true", response.Result.Data.Text);
+        
+        var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+        var responseElement = JsonSerializer.Deserialize<JsonElement>(responseJson);
+        
+        Assert.False(responseElement.TryGetProperty("error", out _));
+        Assert.True(responseElement.TryGetProperty("result", out var resultElement));
+        Assert.True(resultElement.TryGetProperty("content", out var contentElement));
+        Assert.Equal(1, contentElement.GetArrayLength());
+        
+        var content = contentElement[0];
+        Assert.Equal("text", content.GetProperty("type").GetString());
+        var resultText = content.GetProperty("text").GetString();
+        var resultObj = JsonSerializer.Deserialize<JsonElement>(resultText!);
+        Assert.True(resultObj.GetProperty("success").GetBoolean());
 
         // Verify the event store was called with the correct event properties
         _eventStoreMock.Verify(x => x.AppendEventAsync(
@@ -165,8 +198,12 @@ public class McpServerTests
         // Assert
         Assert.NotNull(response);
         Assert.Equal("1", response.Id);
-        Assert.NotNull(response.Error);
-        Assert.Equal(-32601, response.Error.Code);
-        Assert.Contains("Method not found: invalid_method", response.Error.Message);
+        
+        var responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+        var responseElement = JsonSerializer.Deserialize<JsonElement>(responseJson);
+        
+        Assert.True(responseElement.TryGetProperty("error", out var errorElement));
+        Assert.Equal(-32601, errorElement.GetProperty("code").GetInt32());
+        Assert.Contains("Method not found: invalid_method", errorElement.GetProperty("message").GetString());
     }
 } 

@@ -3,7 +3,11 @@ using Core.Domain.Shared.Interfaces;
 using Core.Domain.Shared.Models;
 using Core.Domain.Shared.ValueObjects;
 using DynamicConsistencyBoundary.McpServer.Models;
+using DynamicConsistencyBoundary.McpServer.Tools;
+using DynamicConsistencyBoundary.McpServer.Prompts;
 using System.Text.Json.Serialization;
+using System.Reflection;
+using System.ComponentModel;
 
 namespace DynamicConsistencyBoundary.McpServer;
 
@@ -26,83 +30,85 @@ public class McpServer
 
     private List<ToolDefinition> InitializeTools()
     {
-        return new List<ToolDefinition>
+        var tools = new List<ToolDefinition>();
+        var assembly = Assembly.GetExecutingAssembly();
+
+        // Find all types with McpServerToolType attribute
+        var toolTypes = assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() != null);
+
+        foreach (var toolType in toolTypes)
         {
-            new ToolDefinition
+            // Find all methods with McpServerTool attribute
+            var toolMethods = toolType.GetMethods()
+                .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() != null);
+
+            foreach (var method in toolMethods)
             {
-                Name = "query_events",
-                Description = "Query events from the event store using various filters",
-                InputSchema = new ToolInputSchema
+                var toolAttr = method.GetCustomAttribute<McpServerToolAttribute>();
+                var descAttr = method.GetCustomAttribute<DescriptionAttribute>();
+
+                var tool = new ToolDefinition
                 {
-                    Properties = new Dictionary<string, ToolParameterProperty>
-                    {
-                        ["eventType"] = new ToolParameterProperty
-                        {
-                            Type = "string",
-                            Description = "Filter events by type"
-                        },
-                        ["tags"] = new ToolParameterProperty
-                        {
-                            Type = "array",
-                            Description = "Filter events by tags",
-                            Items = new ToolParameterProperty
-                            {
-                                Type = "object",
-                                Description = "Tag with key and value"
-                            }
-                        },
-                        ["matchAnyTag"] = new ToolParameterProperty
-                        {
-                            Type = "boolean",
-                            Description = "Whether to match any tag (true) or all tags (false)"
-                        },
-                        ["fromPosition"] = new ToolParameterProperty
-                        {
-                            Type = "integer",
-                            Description = "Start reading from this position"
-                        },
-                        ["pageSize"] = new ToolParameterProperty
-                        {
-                            Type = "integer",
-                            Description = "Maximum number of events to return"
-                        }
-                    }
-                }
-            },
-            new ToolDefinition
-            {
-                Name = "append_event",
-                Description = "Append a new event to the event store",
-                InputSchema = new ToolInputSchema
-                {
-                    Properties = new Dictionary<string, ToolParameterProperty>
-                    {
-                        ["event"] = new ToolParameterProperty
-                        {
-                            Type = "object",
-                            Description = "The event to append"
-                        },
-                        ["query"] = new ToolParameterProperty
-                        {
-                            Type = "object",
-                            Description = "Query context for the event"
-                        },
-                        ["lastKnownPosition"] = new ToolParameterProperty
-                        {
-                            Type = "integer",
-                            Description = "Last known position for optimistic concurrency"
-                        }
-                    },
-                    Required = new List<string> { "event", "query", "lastKnownPosition" }
-                }
-            },
-            new ToolDefinition
-            {
-                Name = "get_current_position",
-                Description = "Get the current position in the event store",
-                InputSchema = new ToolInputSchema()
+                    Name = !string.IsNullOrEmpty(toolAttr?.Name) ? toolAttr.Name : method.Name,
+                    Description = descAttr?.Description ?? string.Empty,
+                    InputSchema = CreateInputSchema(method)
+                };
+
+                tools.Add(tool);
             }
+        }
+
+        return tools;
+    }
+
+    private ToolInputSchema CreateInputSchema(MethodInfo method)
+    {
+        var schema = new ToolInputSchema
+        {
+            Type = "object",
+            Properties = new Dictionary<string, ToolParameterProperty>()
         };
+
+        var parameters = method.GetParameters();
+        foreach (var param in parameters)
+        {
+            if (param.ParameterType == typeof(IEventStore)) continue;
+
+            var descAttr = param.GetCustomAttribute<DescriptionAttribute>();
+            var property = new ToolParameterProperty
+            {
+                Type = GetJsonSchemaType(param.ParameterType),
+                Description = descAttr?.Description ?? string.Empty
+            };
+
+            if (param.ParameterType.IsGenericType && param.ParameterType.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                property.Items = new ToolParameterProperty
+                {
+                    Type = GetJsonSchemaType(param.ParameterType.GetGenericArguments()[0])
+                };
+            }
+
+            schema.Properties[param.Name!] = property;
+
+            if (!param.IsOptional)
+            {
+                schema.Required.Add(param.Name!);
+            }
+        }
+
+        return schema;
+    }
+
+    private string GetJsonSchemaType(Type type)
+    {
+        if (type == typeof(string)) return "string";
+        if (type == typeof(int) || type == typeof(long)) return "integer";
+        if (type == typeof(bool)) return "boolean";
+        if (type == typeof(double) || type == typeof(float)) return "number";
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>)) return "array";
+        return "object";
     }
 
     public async Task RunAsync()
@@ -115,38 +121,46 @@ public class McpServer
 
         while (true)
         {
-            var line = await Console.In.ReadLineAsync();
-            if (line == null) break;
-
             try
             {
-                var request = JsonSerializer.Deserialize<JsonRpcRequest>(line, jsonOptions);
-                if (request == null) continue;
+                var line = await Console.In.ReadLineAsync();
+                if (line == null) break;
 
-                // Validate JSON-RPC 2.0 request
-                if (request.JsonRpc != "2.0")
+                try
                 {
-                    await SendErrorAsync(request.Id, -32600, "Invalid Request - missing jsonrpc 2.0");
-                    continue;
-                }
+                    var request = JsonSerializer.Deserialize<JsonRpcRequest>(line, jsonOptions);
+                    if (request == null) continue;
 
-                var response = await HandleRequest(request);
-                if (response != null) // Only send response if we got one back
-                {
-                    var responseJson = JsonSerializer.Serialize(response, jsonOptions);
-                    await Console.Out.WriteLineAsync(responseJson);
-                    await Console.Out.FlushAsync();
+                    // Validate JSON-RPC 2.0 request
+                    if (request.JsonRpc != "2.0")
+                    {
+                        await SendErrorAsync(request.Id, -32600, "Invalid Request - missing jsonrpc 2.0");
+                        continue;
+                    }
+
+                    var response = await HandleRequest(request);
+                    if (response != null) // Only send response if we got one back
+                    {
+                        var responseJson = JsonSerializer.Serialize(response, jsonOptions);
+                        await Console.Out.WriteLineAsync(responseJson);
+                        await Console.Out.FlushAsync();
+                    }
                 }
-            }
-            catch (JsonException ex)
-            {
-                Console.Error.WriteLine($"[ERROR] JSON Parse error: {ex.Message}");
-                await SendErrorAsync(null, -32700, "Parse error");
+                catch (JsonException ex)
+                {
+                    Console.Error.WriteLine($"[ERROR] JSON Parse error: {ex.Message}");
+                    await SendErrorAsync(null, -32700, "Parse error");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[ERROR] Internal error: {ex.Message}");
+                    await SendErrorAsync(null, -32603, $"Internal error: {ex.Message}");
+                }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[ERROR] Internal error: {ex.Message}");
-                await SendErrorAsync(null, -32603, $"Internal error: {ex.Message}");
+                Console.Error.WriteLine($"[ERROR] Fatal error: {ex.Message}");
+                break;
             }
         }
     }
@@ -235,11 +249,11 @@ public class McpServer
     {
         switch (name)
         {
-            case "query_events":
+            case "QueryEvents":
                 return await HandleQueryEvents(arguments);
-            case "append_event":
+            case "AppendEvent":
                 return await HandleAppendEvent(arguments);
-            case "get_current_position":
+            case "GetCurrentPosition":
                 return await HandleGetCurrentPosition();
             default:
                 throw new InvalidOperationException($"Unknown tool: {name}");
@@ -348,13 +362,32 @@ public class McpServer
         // Debug logging
         Console.Error.WriteLine($"[DEBUG] Event JSON: {eventElement.GetRawText()}");
 
-        var @event = JsonSerializer.Deserialize<Event>(eventElement.GetRawText(), _jsonOptions);
+        // Extract event properties
+        var eventType = eventElement.GetProperty("eventType").GetString();
+        var tags = eventElement.GetProperty("tags").EnumerateArray()
+            .Select(t => new EntityTag(
+                t.GetProperty("entity").GetString()!,
+                t.GetProperty("id").GetString()!
+            ))
+            .ToList();
+        var data = eventElement.GetProperty("data").GetRawText();
+
+        // Create event with serialized data
+        var @event = new Event(
+            Guid.NewGuid().ToString(),
+            0, // Position will be set by event store
+            eventType!,
+            DateTime.UtcNow,
+            tags,
+            data
+        );
+
         var query = JsonSerializer.Deserialize<EventQuery>(queryElement.GetRawText(), _jsonOptions);
         var lastKnownPosition = positionElement.GetInt64();
 
-        if (@event == null || query == null)
+        if (query == null)
         {
-            throw new ArgumentException("Failed to deserialize event or query");
+            throw new ArgumentException("Failed to deserialize query");
         }
 
         await _eventStore.AppendEventAsync(@event, query, lastKnownPosition);
