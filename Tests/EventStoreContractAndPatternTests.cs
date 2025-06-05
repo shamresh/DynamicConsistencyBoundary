@@ -308,5 +308,77 @@ namespace Tests.EventStore
             Assert.Single(dcbEvents); // Only the StudentSubscribed event for s8-2/c8-2
             Assert.Equal("StudentSubscribed", dcbEvents[0].EventType);
         }
+
+        [Fact]
+        public async Task QueryEvents_FilteringScenarios_ShouldReturnExpectedResults()
+        {
+            var s1 = new EntityTag("student", "s1");
+            var s2 = new EntityTag("student", "s2");
+            var c1 = new EntityTag("class", "c1");
+            var c2 = new EntityTag("class", "c2");
+
+            var events = new[]
+            {
+                Event.CreateEventWithTags("StudentRegistered", new[] { s1 }, new { Name = "Alice" }),
+                Event.CreateEventWithTags("StudentRegistered", new[] { s2 }, new { Name = "Bob" }),
+                Event.CreateEventWithTags("ClassCreated", new[] { c1 }, new { Title = "Math" }),
+                Event.CreateEventWithTags("ClassCreated", new[] { c2 }, new { Title = "Science" }),
+                Event.CreateEventWithTags("StudentEnrolled", new[] { s1, c1 }, new { StudentId = "s1", ClassId = "c1" }),
+                Event.CreateEventWithTags("StudentEnrolled", new[] { s2, c1 }, new { StudentId = "s2", ClassId = "c1" }),
+                Event.CreateEventWithTags("StudentEnrolled", new[] { s1, c2 }, new { StudentId = "s1", ClassId = "c2" }),
+            };
+
+            var position = await _store.GetCurrentPositionAsync();
+            foreach (var @event in events)
+            {
+                await _store.AppendEventAsync(@event, EventQuery.Create().Build(), position);
+                position = await _store.GetCurrentPositionAsync();
+            }
+
+            // 1. Event type only
+            var typeQuery = EventQuery.Create()
+                .WithSpecification(EventFilterSpecification.ByEventType("StudentRegistered"))
+                .Build();
+            var typeResults = await _store.QueryEventsAsync(typeQuery);
+            Assert.All(typeResults, e => Assert.Equal("StudentRegistered", e.EventType));
+
+            // 2. Tag only
+            var tagQuery = EventQuery.Create()
+                .WithSpecification(EventFilterSpecification.ByTag(s1))
+                .Build();
+            var tagResults = await _store.QueryEventsAsync(tagQuery);
+            Assert.All(tagResults, e => Assert.Contains(e.Tags, t => t.Entity == "student" && t.Id == "s1"));
+
+            // 3. Event type + tag
+            var typeTagQuery = EventQuery.Create()
+                .WithSpecification(EventFilterSpecification.ByEventTypeAndTags("StudentEnrolled", new[] { s1 }))
+                .Build();
+            var typeTagResults = await _store.QueryEventsAsync(typeTagQuery);
+            Assert.All(typeTagResults, e => {
+                Assert.Equal("StudentEnrolled", e.EventType);
+                Assert.Contains(e.Tags, t => t.Entity == "student" && t.Id == "s1");
+            });
+
+            // 4. Multiple tags, match all
+            var allTagsQuery = EventQuery.Create()
+                .WithSpecification(EventFilterSpecification.ByTags(new[] { s1, c1 }))
+                .Build();
+            var allTagsResults = await _store.QueryEventsAsync(allTagsQuery);
+            Assert.All(allTagsResults, e => {
+                Assert.Contains(e.Tags, t => t.Entity == "student" && t.Id == "s1");
+                Assert.Contains(e.Tags, t => t.Entity == "class" && t.Id == "c1");
+            });
+
+            // 5. Multiple tags, match any
+            var anyTagsQuery = EventQuery.Create()
+                .WithSpecification(EventFilterSpecification.ByTags(new[] { s1, c2 }, matchAny: true))
+                .Build();
+            var anyTagsResults = await _store.QueryEventsAsync(anyTagsQuery);
+            Assert.All(anyTagsResults, e =>
+                Assert.True(
+                    e.Tags.Any(t => (t.Entity == "student" && t.Id == "s1") || (t.Entity == "class" && t.Id == "c2"))
+                )
+            );
+        }
     }
 } 

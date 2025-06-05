@@ -1,4 +1,5 @@
 using Core.Domain.Shared.ValueObjects;
+using System.Text.Json.Serialization;
 
 namespace Core.Domain.Shared.Models;
 
@@ -11,16 +12,19 @@ public class EventFilterSpecification
     /// <summary>
     /// Gets the event type to filter by.
     /// </summary>
+    [JsonPropertyName("eventType")]
     public string? EventType { get; }
 
     /// <summary>
     /// Gets the tags to filter by.
     /// </summary>
+    [JsonPropertyName("tags")]
     public IReadOnlyList<EntityTag>? Tags { get; }
 
     /// <summary>
     /// Gets whether to match any of the tags (true) or all of them (false).
     /// </summary>
+    [JsonPropertyName("matchAnyTag")]
     public bool MatchAnyTag { get; }
 
     /// <summary>
@@ -29,7 +33,8 @@ public class EventFilterSpecification
     /// <param name="eventType">The event type to filter by.</param>
     /// <param name="tags">The tags to filter by.</param>
     /// <param name="matchAnyTag">Whether to match any of the tags (true) or all of them (false).</param>
-    private EventFilterSpecification(string? eventType, IReadOnlyList<EntityTag>? tags, bool matchAnyTag = false)
+    [JsonConstructor]
+    public EventFilterSpecification(string? eventType, IReadOnlyList<EntityTag>? tags, bool matchAnyTag = false)
     {
         EventType = eventType;
         Tags = tags;

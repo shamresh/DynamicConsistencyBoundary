@@ -27,7 +27,7 @@ public class InMemoryEventStore : IEventStore
             // Create a new event with the correct position
             var eventWithPosition = new Event(
                 @event.Id,
-                _currentPosition,
+                _currentPosition,  // Use current position for storage
                 @event.EventType,
                 @event.Timestamp,
                 @event.Tags,
@@ -53,38 +53,33 @@ public class InMemoryEventStore : IEventStore
             // Apply filters
             if (query.Filters.Any())
             {
-                events = events.Where(e =>
+                events = events.Where(e => query.Filters.All(filter =>
                 {
-                    // Check if all filters match the event
-                    return query.Filters.All(filter =>
+                    // First check event type if specified
+                    if (filter.EventType != null && filter.EventType != e.EventType)
+                        return false;
+
+                    // Then check tags if specified
+                    if (filter.Tags != null && filter.Tags.Any())
                     {
-                        // Check event type if specified
-                        if (filter.EventType != null)
+                        if (filter.MatchAnyTag)
                         {
-                            if (filter.EventType != e.EventType)
-                                return false;
+                            // Match any tag
+                            return filter.Tags.Any(tag => e.Tags.Contains(tag));
                         }
-
-                        // Check tags if specified
-                        if (filter.Tags != null && filter.Tags.Any())
+                        else
                         {
-                            if (filter.MatchAnyTag)
-                            {
-                                // Match any tag
-                                if (!filter.Tags.Any(tag => e.Tags.Contains(tag)))
-                                    return false;
-                            }
-                            else
-                            {
-                                // Match all tags
-                                if (!filter.Tags.All(tag => e.Tags.Contains(tag)))
-                                    return false;
-                            }
+                            // Match all tags
+                            return filter.Tags.All(tag => e.Tags.Contains(tag));
                         }
+                    }
 
-                        return true;
-                    });
-                });
+                    // If we get here, either:
+                    // 1. No event type was specified (filter.EventType == null)
+                    // 2. Event type matched (filter.EventType == e.EventType)
+                    // 3. No tags were specified (filter.Tags == null || !filter.Tags.Any())
+                    return true;
+                }));
             }
 
             // Then apply position filter

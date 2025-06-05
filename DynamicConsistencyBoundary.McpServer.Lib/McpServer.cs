@@ -259,15 +259,21 @@ public class McpServer
     {
         var queryBuilder = EventQuery.Create();
 
-        // Get event type and tags if specified
         string? eventType = null;
-        if (arguments.TryGetValue("eventType", out var eventTypeObj) && eventTypeObj is string eventTypeStr)
+        if (arguments.TryGetValue("eventType", out var eventTypeObj))
         {
-            eventType = eventTypeStr;
-            queryBuilder.WithSpecification(EventFilterSpecification.ByEventType(eventType));
+            if (eventTypeObj is string eventTypeStr)
+            {
+                eventType = eventTypeStr;
+            }
+            else if (eventTypeObj is JsonElement eventTypeElement && eventTypeElement.ValueKind == JsonValueKind.String)
+            {
+                eventType = eventTypeElement.GetString();
+            }
         }
 
         List<EntityTag>? tags = null;
+        bool matchAnyTag = false;
         if (arguments.TryGetValue("tags", out var tagsObj) && tagsObj is JsonElement tagsElement)
         {
             tags = tagsElement.EnumerateArray()
@@ -277,7 +283,30 @@ public class McpServer
                 ))
                 .ToList();
 
-            var matchAnyTag = arguments.TryGetValue("matchAnyTag", out var matchAny) && matchAny is bool matchAnyBool && matchAnyBool;
+            matchAnyTag = arguments.TryGetValue("matchAnyTag", out var matchAny) && matchAny is bool matchAnyBool && matchAnyBool;
+        }
+
+        // Add filters based on what's provided
+        Console.Error.WriteLine($"[DEBUG] eventType: {eventType}, tags: {JsonSerializer.Serialize(tags, _jsonOptions)}, matchAnyTag: {matchAnyTag}");
+        if (!string.IsNullOrEmpty(eventType))
+        {
+            if (tags != null && tags.Any())
+            {
+                // Both event type and tags are provided
+                Console.Error.WriteLine($"[DEBUG] Using ByEventTypeAndTags with eventType: {eventType}, tags: {JsonSerializer.Serialize(tags, _jsonOptions)}, matchAnyTag: {matchAnyTag}");
+                queryBuilder.WithSpecification(EventFilterSpecification.ByEventTypeAndTags(eventType, tags, matchAnyTag));
+            }
+            else
+            {
+                // Only event type is provided
+                Console.Error.WriteLine($"[DEBUG] Using ByEventType with eventType: {eventType}");
+                queryBuilder.WithSpecification(EventFilterSpecification.ByEventType(eventType));
+            }
+        }
+        else if (tags != null && tags.Any())
+        {
+            // Only tags are provided
+            Console.Error.WriteLine($"[DEBUG] Using ByTags with tags: {JsonSerializer.Serialize(tags, _jsonOptions)}, matchAnyTag: {matchAnyTag}");
             queryBuilder.WithSpecification(EventFilterSpecification.ByTags(tags, matchAnyTag));
         }
 
@@ -293,7 +322,9 @@ public class McpServer
         }
 
         var query = queryBuilder.Build();
+        Console.Error.WriteLine($"[DEBUG] Query: {JsonSerializer.Serialize(query, _jsonOptions)}");
         var events = await _eventStore.QueryEventsAsync(query);
+        Console.Error.WriteLine($"[DEBUG] Results: {JsonSerializer.Serialize(events, _jsonOptions)}");
         
         // Convert events to a format that matches the query format
         var formattedEvents = events.Select(e => new

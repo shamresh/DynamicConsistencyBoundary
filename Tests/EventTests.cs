@@ -103,4 +103,113 @@ public class EventTests
         Assert.Equal(data, @event.Data);
         Assert.True(@event.Timestamp <= DateTime.UtcNow);
     }
+
+    [Fact]
+    public void Create_WithMultipleTags_ShouldSucceed()
+    {
+        // Arrange
+        var eventType = "CourseEnrollment";
+        var tags = new List<EntityTag>
+        {
+            new("student", "s1"),
+            new("course", "c1"),
+            new("semester", "2024-1")
+        };
+        var data = new { EnrollmentDate = DateTime.UtcNow, Grade = "A" };
+
+        // Act
+        var @event = Event.CreateEventWithTags(eventType, tags, data);
+
+        // Assert
+        Assert.False(string.IsNullOrWhiteSpace(@event.Id));
+        Assert.Equal(eventType, @event.EventType);
+        Assert.Equal(3, @event.Tags.Count);
+        Assert.Contains(new EntityTag("student", "s1"), @event.Tags);
+        Assert.Contains(new EntityTag("course", "c1"), @event.Tags);
+        Assert.Contains(new EntityTag("semester", "2024-1"), @event.Tags);
+        Assert.Equal(data, @event.Data);
+    }
+
+    [Fact]
+    public void Create_WithDuplicateTags_ShouldSucceed()
+    {
+        // Arrange
+        var eventType = "GradeUpdated";
+        var tags = new List<EntityTag>
+        {
+            new("student", "s1"),
+            new("student", "s1"), // Duplicate tag
+            new("course", "c1")
+        };
+        var data = new { OldGrade = "B", NewGrade = "A" };
+
+        // Act
+        var @event = Event.CreateEventWithTags(eventType, tags, data);
+
+        // Assert
+        Assert.False(string.IsNullOrWhiteSpace(@event.Id));
+        Assert.Equal(eventType, @event.EventType);
+        Assert.Equal(3, @event.Tags.Count); // Should still include duplicates
+        Assert.Equal(2, @event.Tags.Count(t => t.Entity == "student" && t.Id == "s1")); // Should have 2 student tags
+        Assert.Equal(data, @event.Data);
+    }
+
+    [Fact]
+    public void Create_WithComplexEventType_ShouldSucceed()
+    {
+        // Arrange
+        var eventType = "Student.Course.Enrollment.Completed";
+        var tags = new List<EntityTag>
+        {
+            new("student", "s1"),
+            new("course", "c1"),
+            new("department", "CS"),
+            new("semester", "2024-1")
+        };
+        var data = new 
+        { 
+            EnrollmentDate = DateTime.UtcNow,
+            Grade = "A",
+            Credits = 3,
+            IsFullTime = true
+        };
+
+        // Act
+        var @event = Event.CreateEventWithTags(eventType, tags, data);
+
+        // Assert
+        Assert.False(string.IsNullOrWhiteSpace(@event.Id));
+        Assert.Equal(eventType, @event.EventType);
+        Assert.Equal(4, @event.Tags.Count);
+        Assert.Contains(new EntityTag("student", "s1"), @event.Tags);
+        Assert.Contains(new EntityTag("course", "c1"), @event.Tags);
+        Assert.Contains(new EntityTag("department", "CS"), @event.Tags);
+        Assert.Contains(new EntityTag("semester", "2024-1"), @event.Tags);
+        Assert.Equal(data, @event.Data);
+    }
+
+    [Fact]
+    public void Create_WithEmptyTagId_ShouldThrowArgumentException()
+    {
+        // Arrange
+        var eventType = "SystemEvent";
+        var tags = new List<EntityTag>
+        {
+            new("system", "system1"), // Valid tag
+            new("component", "auth")
+        };
+        var data = new { Message = "System maintenance" };
+
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() => new EntityTag("system", "")); // Should throw for empty ID
+        var @event = Event.CreateEventWithTags(eventType, tags, data); // This should succeed with valid tags
+
+        // Verify the event was created correctly with valid tags
+        Assert.False(string.IsNullOrWhiteSpace(@event.Id));
+        Assert.Equal(eventType, @event.EventType);
+        Assert.Equal(2, @event.Tags.Count);
+        Assert.Contains(new EntityTag("system", "system1"), @event.Tags);
+        Assert.Contains(new EntityTag("component", "auth"), @event.Tags);
+        Assert.Equal(data, @event.Data);
+    }
 } 
